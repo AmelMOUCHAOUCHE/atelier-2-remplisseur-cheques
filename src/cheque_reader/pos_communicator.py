@@ -1,0 +1,79 @@
+"""Module de communication avec la caisse (POS) pour le remplisseur de chèques."""
+from dataclasses import dataclass
+from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
+
+import serial
+
+
+class PosCommunicationError(Exception):
+    """Erreur de base pour toute erreur de communication avec la caisse."""
+
+
+class NoTransactionError(PosCommunicationError):
+    """Aucun paiement par chèque en cours."""
+
+
+class PosBusyError(PosCommunicationError):
+    """La caisse est occupée."""
+
+
+class PosTimeoutError(PosCommunicationError):
+    """Aucune réponse de la caisse dans le délai imparti."""
+
+
+class MalformedResponseError(PosCommunicationError):
+    """Trame vide, illisible ou ne respectant pas le protocole."""
+
+
+class InvalidChequeDataError(PosCommunicationError):
+    """Date ou montant invalide dans une trame bien formée."""
+
+
+@dataclass(frozen=True)
+class ChequeData:
+    date: date
+    amount: Decimal
+
+
+class PosCommunicator:
+    REQUEST = b"GET_CHEQUE_DATA\n"
+
+    def __init__(self, port: str = "COM3", baudrate: int = 9600, timeout: float = 2.0):
+        self.serial = serial.Serial(port, baudrate, timeout=timeout)
+
+    def fetch_cheque_data(self) -> ChequeData:
+        self.serial.write(self.REQUEST)
+        raw = self.serial.readline()
+
+        if not raw:
+            raise PosTimeoutError("Aucune réponse de la caisse (timeout)")
+
+        try:
+            line = raw.decode("ascii").strip()
+        except UnicodeDecodeError:
+            raise MalformedResponseError("Trame non ASCII")
+
+        if line == "ERR_NO_TRANSACTION":
+            raise NoTransactionError("Aucune transaction chèque en cours")
+        if line == "ERR_BUSY":
+            raise PosBusyError("Caisse occupée")
+
+        parts = line.split(";")
+        if len(parts) != 3 or parts[0] != "OK":
+            raise MalformedResponseError(f"Trame malformée : {line!r}")
+
+        try:
+            cheque_date = datetime.strptime(parts[1], "%Y-%m-%d").date()
+        except ValueError:
+            raise InvalidChequeDataError(f"Date invalide : {parts[1]!r}")
+
+        try:
+            amount = Decimal(parts[2])
+        except InvalidOperation:
+            raise InvalidChequeDataError(f"Montant invalide : {parts[2]!r}")
+
+        if amount <= 0:
+            raise InvalidChequeDataError(f"Montant non positif : {amount}")
+
+        return ChequeData(date=cheque_date, amount=amount)
