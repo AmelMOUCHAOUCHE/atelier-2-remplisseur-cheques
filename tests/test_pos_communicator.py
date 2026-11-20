@@ -1,4 +1,5 @@
 """Tests unitaires de PosCommunicator (1 classe testée = 1 classe de test)."""
+import re
 from datetime import date
 from decimal import Decimal
 from unittest.mock import Mock
@@ -71,12 +72,12 @@ class TestPosCommunicator:
 
     def test_err_no_transaction_leve_no_transaction_error(self):
         communicator, _ = make_communicator(b"ERR_NO_TRANSACTION\n")
-        with pytest.raises(NoTransactionError):
+        with pytest.raises(NoTransactionError, match=r"^Aucune transaction chèque en cours$"):
             communicator.fetch_cheque_data()
 
     def test_err_busy_leve_pos_busy_error(self):
         communicator, _ = make_communicator(b"ERR_BUSY\n")
-        with pytest.raises(PosBusyError):
+        with pytest.raises(PosBusyError, match=r"^Caisse occupée$"):
             communicator.fetch_cheque_data()
 
     # ---------- Timeout / trame vide ----------
@@ -84,7 +85,7 @@ class TestPosCommunicator:
     def test_absence_de_reponse_leve_timeout(self):
         # pyserial renvoie b"" quand le timeout expire
         communicator, _ = make_communicator(b"")
-        with pytest.raises(PosTimeoutError):
+        with pytest.raises(PosTimeoutError, match=r"^Aucune réponse de la caisse \(timeout\)$"):
             communicator.fetch_cheque_data()
 
     def test_ligne_vide_leve_malformed(self):
@@ -101,12 +102,21 @@ class TestPosCommunicator:
         b"ok;2026-11-16;145.50\n",         # statut en minuscules
         b"KO;2026-11-16;145.50\n",         # statut inconnu
         b"ERR_UNKNOWN\n",                  # erreur non prévue
-        b"\xff\xfe\x00\n",                 # octets non ASCII
+        
     ])
+
     def test_trame_malformee_leve_malformed(self, response):
         communicator, _ = make_communicator(response)
-        with pytest.raises(MalformedResponseError):
+        line = response.decode().strip()
+        with pytest.raises(MalformedResponseError, match=f"^Trame malformée : {re.escape(repr(line))}$"):
             communicator.fetch_cheque_data()
+
+    
+    def test_octets_non_ascii_levent_malformed(self):
+        communicator, _ = make_communicator(b"\xff\xfe\x00\n")
+        with pytest.raises(MalformedResponseError, match=r"^Trame non ASCII$"):
+            communicator.fetch_cheque_data()
+            
 
     # ---------- Dates invalides ----------
 
@@ -121,7 +131,7 @@ class TestPosCommunicator:
     ])
     def test_date_invalide_leve_invalid_cheque_data(self, bad_date):
         communicator, _ = make_communicator(f"OK;{bad_date};145.50\n".encode())
-        with pytest.raises(InvalidChequeDataError):
+        with pytest.raises(InvalidChequeDataError, match=f"^(Format de date invalide|Date inexistante) : {re.escape(repr(bad_date))}$"):
             communicator.fetch_cheque_data()
 
     # ---------- Montants invalides ----------
@@ -141,7 +151,7 @@ class TestPosCommunicator:
     ])
     def test_montant_invalide_leve_invalid_cheque_data(self, bad_amount):
         communicator, _ = make_communicator(f"OK;2026-11-16;{bad_amount}\n".encode())
-        with pytest.raises(InvalidChequeDataError):
+        with pytest.raises(InvalidChequeDataError, match=r"^(Format de montant invalide|Montant hors bornes) : .+$"):
             communicator.fetch_cheque_data()
 
     # ---------- Hiérarchie des exceptions ----------

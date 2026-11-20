@@ -12,3 +12,8 @@ pytest -v
 
 ## Couverture (lignes + branches)
 pytest --cov=src --cov-branch --cov-report=term-missing --cov-report=html
+
+## Tests de mutation (Linux : GitHub Codespaces ou WSL)
+rm -rf mutants
+mutmut run
+mutmut results
