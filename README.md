@@ -17,3 +17,11 @@ pytest --cov=src --cov-branch --cov-report=term-missing --cov-report=html
 rm -rf mutants
 mutmut run
 mutmut results
+
+## Analyse de la dépendance (étape 3)
+Dans le code généré, le constructeur créait directement `serial.Serial(port, ...)` :
+la classe ouvrait un vrai port COM et ne pouvait pas être testée sans caisse branchée
+(dépendance externe et non déterministe).
+Solution : inversion de contrôle. Une interface `SerialPort` (méthodes `write` et
+`readline`) est injectée dans le constructeur. En production on passe
+`serial.Serial("COM3", 9600, timeout=2)`, en test un stub (`unittest.mock.Mock`).
