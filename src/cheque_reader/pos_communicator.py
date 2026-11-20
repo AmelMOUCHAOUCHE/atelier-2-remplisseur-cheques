@@ -2,7 +2,7 @@
 import re
 from dataclasses import dataclass
 from datetime import date, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Protocol
 
 
@@ -86,10 +86,7 @@ class PosCommunicator:
 
         if not AMOUNT_PATTERN.fullmatch(parts[2]):
             raise InvalidChequeDataError(f"Format de montant invalide : {parts[2]!r}")
-        try:
-            amount = Decimal(parts[2])
-        except InvalidOperation:
-            raise InvalidChequeDataError(f"Montant invalide : {parts[2]!r}")
+        amount = Decimal(parts[2])
         if amount <= 0 or amount > MAX_AMOUNT:
             raise InvalidChequeDataError(f"Montant hors bornes : {amount}")
 
