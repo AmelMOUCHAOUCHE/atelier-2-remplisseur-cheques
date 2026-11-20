@@ -2,8 +2,8 @@
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
+from typing import Protocol
 
-import serial
 
 
 class PosCommunicationError(Exception):
@@ -29,6 +29,15 @@ class MalformedResponseError(PosCommunicationError):
 class InvalidChequeDataError(PosCommunicationError):
     """Date ou montant invalide dans une trame bien formée."""
 
+class SerialPort(Protocol):
+    """Ce dont PosCommunicator a besoin pour dialoguer avec la caisse.
+
+    serial.Serial (pyserial) respecte déjà cette interface.
+    """
+
+    def write(self, data: bytes) -> int: ...
+
+    def readline(self) -> bytes: ...
 
 @dataclass(frozen=True)
 class ChequeData:
@@ -39,8 +48,8 @@ class ChequeData:
 class PosCommunicator:
     REQUEST = b"GET_CHEQUE_DATA\n"
 
-    def __init__(self, port: str = "COM3", baudrate: int = 9600, timeout: float = 2.0):
-        self.serial = serial.Serial(port, baudrate, timeout=timeout)
+    def __init__(self, port: SerialPort):
+        self.serial = port
 
     def fetch_cheque_data(self) -> ChequeData:
         self.serial.write(self.REQUEST)
