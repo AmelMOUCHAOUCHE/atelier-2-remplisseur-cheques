@@ -1,4 +1,5 @@
 """Module de communication avec la caisse (POS) pour le remplisseur de chèques."""
+import re
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
@@ -44,6 +45,10 @@ class ChequeData:
     date: date
     amount: Decimal
 
+DATE_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}")
+AMOUNT_PATTERN = re.compile(r"\d+(\.\d{1,2})?")
+MAX_AMOUNT = Decimal("999999.99")  # exigence FCT-VAL-01 (atelier 1)
+
 
 class PosCommunicator:
     REQUEST = b"GET_CHEQUE_DATA\n"
@@ -72,17 +77,20 @@ class PosCommunicator:
         if len(parts) != 3 or parts[0] != "OK":
             raise MalformedResponseError(f"Trame malformée : {line!r}")
 
+        if not DATE_PATTERN.fullmatch(parts[1]):
+            raise InvalidChequeDataError(f"Format de date invalide : {parts[1]!r}")
         try:
             cheque_date = datetime.strptime(parts[1], "%Y-%m-%d").date()
         except ValueError:
-            raise InvalidChequeDataError(f"Date invalide : {parts[1]!r}")
+            raise InvalidChequeDataError(f"Date inexistante : {parts[1]!r}")
 
+        if not AMOUNT_PATTERN.fullmatch(parts[2]):
+            raise InvalidChequeDataError(f"Format de montant invalide : {parts[2]!r}")
         try:
             amount = Decimal(parts[2])
         except InvalidOperation:
             raise InvalidChequeDataError(f"Montant invalide : {parts[2]!r}")
-
-        if amount <= 0:
-            raise InvalidChequeDataError(f"Montant non positif : {amount}")
+        if amount <= 0 or amount > MAX_AMOUNT:
+            raise InvalidChequeDataError(f"Montant hors bornes : {amount}")
 
         return ChequeData(date=cheque_date, amount=amount)
